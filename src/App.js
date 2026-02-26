@@ -258,7 +258,7 @@ function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpe
             ?<p style={{ color:"#888",padding:"24px 0",textAlign:"center" }}>No liked posts yet.</p>
             :userLikes.map(p=>(
               <div key={p.id} style={{ borderBottom:"1px solid #e0ddd8" }}>
-                <div style={{ fontSize:"12px",color:"#888",paddingTop:"16px",marginBottom:"-8px",cursor:"pointer",fontWeight:"700",color:"#1a1a1a" }} onClick={()=>onOpenProfile(p.userId)}>{p.handle}</div>
+                <div style={{ fontSize:"12px",paddingTop:"16px",marginBottom:"-8px",cursor:"pointer",fontWeight:"700",color:"#1a1a1a" }} onClick={()=>onOpenProfile(p.userId)}>{p.handle}</div>
                 <MiniPost p={p}/>
               </div>
             ))
@@ -545,14 +545,7 @@ export default function NformApp() {
     setOfferModal(null); setOfferAmount(""); setOfferError("");
     alert("✅ Offer sent! You'll be notified when the owner responds.");
   }
-
-  // Buy Now — immediate PayPal for listed price
-  function handleBuyNow(post) {
-    setOfferModal({ post });
-    setOfferAmount(String(post.listPrice));
-    setShowPayPal(true);
-  }
-
+  
   // After PayPal payment approved (Buy Now flow)
   async function onPayPalApprove(post, amount) {
     await updateDoc(doc(db,"posts",post.id), {
