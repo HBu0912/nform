@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore, collection, addDoc, onSnapshot,
   orderBy, query, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, setDoc, getDoc
 } from "firebase/firestore";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, updateProfile
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 } from "firebase/auth";
+
 import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 
 const PAYPAL_CLIENT_ID = "AW-I2drjTIjWKk_XUJ_5JcMCU9C1oAENsS9eP1lN-_DzxquyRKurYA7h1LHO0aeUXtE2PerOUnXBlz0z";
