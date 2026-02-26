@@ -288,6 +288,40 @@ function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpe
   );
 }
 
+// ── Like List Modal ───────────────────────────────────────────────
+function LikeListModal({ post, onClose, onOpenProfile }) {
+  const details = post.likeDetails || [];
+  const count   = post.likes?.length || 0;
+  return (
+    <div style={{ position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px" }}
+      onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div style={{ background:"#f8f7f4",border:"2px solid #1a1a1a",borderRadius:"4px",width:"100%",maxWidth:"360px",boxShadow:"6px 6px 0 #1a1a1a" }}>
+        <div style={{ padding:"16px 20px",borderBottom:"2px solid #1a1a1a",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+          <div style={{ fontWeight:"900",fontSize:"16px",fontStyle:"italic" }}>❤️ {count} {count===1?"Like":"Likes"}</div>
+          <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",fontSize:"22px",color:"#888",padding:0 }}>×</button>
+        </div>
+        <div style={{ maxHeight:"360px",overflowY:"auto",padding:"8px 0" }}>
+          {details.length===0
+            ? <p style={{ padding:"20px",textAlign:"center",color:"#888",fontSize:"14px" }}>No details available for older likes.</p>
+            : details.map((d,i)=>(
+              <div key={i} onClick={()=>{ onOpenProfile(d.uid); onClose(); }}
+                style={{ display:"flex",alignItems:"center",gap:"12px",padding:"10px 20px",cursor:"pointer",borderBottom:"1px solid #f0ede8" }}
+                onMouseEnter={e=>e.currentTarget.style.background="#f0ede8"}
+                onMouseLeave={e=>e.currentTarget.style.background="none"}>
+                <Avatar name={d.username} size={36}/>
+                <div>
+                  <div style={{ fontWeight:"700",fontSize:"14px" }}>{d.username}</div>
+                  <div style={{ color:"#888",fontSize:"12px" }}>{d.handle}</div>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Edit Profile Modal ────────────────────────────────────────────
 function EditProfileModal({ user, currentData, onClose, onSave }) {
   const [displayName,     setDisplayName]     = useState(currentData?.displayName||user?.displayName||"");
@@ -400,6 +434,8 @@ export default function NformApp() {
   const [listingModal,   setListingModal]   = useState(null);
   const [listPrice,      setListPrice]      = useState("");
   const [listError,      setListError]      = useState("");
+  const [likeListPostId, setLikeListPostId] = useState(null);
+  const [totalUsers,     setTotalUsers]     = useState(0);
 
   // ── Auth ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -409,10 +445,22 @@ export default function NformApp() {
         const saved = localStorage.getItem(`nform_bookmarks_${u.uid}`);
         setBookmarks(saved ? JSON.parse(saved) : []);
         const snap = await getDoc(doc(db,"users",u.uid));
-        setUserProfile(snap.exists() ? snap.data() : null);
+        if (snap.exists()) {
+          setUserProfile(snap.data());
+        } else {
+          // First sign-in — register user
+          const newProfile = { displayName:u.displayName||"", bio:"", privacy:{ likes:true, holdings:true }, joinedAt:serverTimestamp() };
+          await setDoc(doc(db,"users",u.uid), newProfile);
+          setUserProfile(newProfile);
+        }
       } else { setBookmarks([]); setUserProfile(null); }
     });
     return unsub;
+  }, []);
+
+  // ── Total user count ────────────────────────────────────────────
+  useEffect(() => {
+    return onSnapshot(collection(db,"users"), snap => setTotalUsers(snap.size));
   }, []);
 
   // ── Posts ───────────────────────────────────────────────────────
@@ -457,6 +505,9 @@ export default function NformApp() {
   // Accepted offers where current user is the buyer — needs to pay
   const myAcceptedOffers = offers.filter(o=>o.status==="accepted"&&o.buyerId===user?.uid);
 
+  // Declined offers where current user is the buyer — not yet dismissed
+  const myDeclinedOffers = offers.filter(o=>o.status==="declined"&&o.buyerId===user?.uid&&!o.buyerDismissed);
+
   const displayedPosts = activeFeed==="bookmarks" ? bookmarkedPosts
     : activeFeed==="holdings"  ? holdingsPosts
     : activeFeed==="likes"     ? likedPosts
@@ -487,10 +538,22 @@ export default function NformApp() {
     } catch(e) { setError("Failed to post."); }
   }
 
-  async function handleLike(postId, currentLikes) {
+  async function handleLike(postId, currentLikes, currentLikeDetails) {
     if (!user) { setSignInPrompt("Sign in to like posts!"); return; }
     const liked = currentLikes?.includes(user.uid);
-    await updateDoc(doc(db,"posts",postId), { likes:liked?arrayRemove(user.uid):arrayUnion(user.uid) });
+    const userDetail = { uid:user.uid, username:displayName||user.displayName, handle:"@"+(displayName||user.displayName).toLowerCase().replace(/\s/g,"") };
+    if (liked) {
+      const existing = (currentLikeDetails||[]).find(d=>d.uid===user.uid);
+      await updateDoc(doc(db,"posts",postId), {
+        likes: arrayRemove(user.uid),
+        ...(existing ? { likeDetails:arrayRemove(existing) } : {}),
+      });
+    } else {
+      await updateDoc(doc(db,"posts",postId), {
+        likes: arrayUnion(user.uid),
+        likeDetails: arrayUnion(userDetail),
+      });
+    }
   }
 
   async function handleComment(postId) {
@@ -586,6 +649,10 @@ export default function NformApp() {
     await updateDoc(doc(db,"offers",offerId), { status:"declined" });
   }
 
+  async function dismissDeclinedOffer(offerId) {
+    await updateDoc(doc(db,"offers",offerId), { buyerDismissed:true });
+  }
+
   async function saveListing() {
     setListError("");
     if (!listPrice||isNaN(listPrice)||Number(listPrice)<=0) { setListError("Enter a valid price."); return; }
@@ -600,6 +667,9 @@ export default function NformApp() {
 
       {/* Sign-in prompt */}
       {signInPrompt&&<SignInPrompt message={signInPrompt} onLogin={handleLogin} onClose={()=>setSignInPrompt(null)}/>}
+
+      {/* Like list */}
+      {likeListPostId&&(()=>{ const p=posts.find(x=>x.id===likeListPostId); return p?<LikeListModal post={p} onClose={()=>setLikeListPostId(null)} onOpenProfile={id=>{ setLikeListPostId(null); setViewingProfileId(id); }}/>:null; })()}
 
       {/* Profile view */}
       {viewingProfileId&&(
@@ -726,6 +796,7 @@ export default function NformApp() {
           <button onClick={()=>setSidebarOpen(!sidebarOpen)} style={{ background:"none",border:"none",cursor:"pointer",fontSize:"20px" }}>☰</button>
           <span style={{ fontSize:"22px",fontWeight:"900",letterSpacing:"-1px",fontStyle:"italic" }}>Nform</span>
           <span style={{ background:"#1a1a1a",color:"#f8f7f4",fontSize:"10px",fontWeight:"700",letterSpacing:"2px",padding:"2px 8px",textTransform:"uppercase" }}>LIVE</span>
+          <span style={{ fontSize:"11px",color:"#888",fontWeight:"600",whiteSpace:"nowrap" }}>👥 {totalUsers.toLocaleString()} {totalUsers===1?"member":"members"}</span>
         </div>
         <div style={{ flex:1,maxWidth:"400px" }}>
           <input value={search} onChange={e=>{ setSearch(e.target.value); setActiveFeed("home"); }} placeholder="🔍 Search posts..."
@@ -748,8 +819,8 @@ export default function NformApp() {
                       <button key={item.feed} onClick={()=>{ setActiveFeed(item.feed); setShowNavMenu(false); }}
                         style={{ display:"block",width:"100%",padding:"12px 16px",background:activeFeed===item.feed?"#1a1a1a":"none",color:activeFeed===item.feed?"#f8f7f4":"#1a1a1a",border:"none",borderBottom:"1px solid #e0ddd8",cursor:"pointer",fontSize:"13px",fontFamily:"inherit",textAlign:"left",fontWeight:"600" }}>
                         {item.label}
-                        {item.feed==="holdings"&&(myIncomingOffers.length+myAcceptedOffers.length)>0&&(
-                          <span style={{ marginLeft:"6px",background:"#dc2626",color:"#fff",borderRadius:"10px",padding:"1px 6px",fontSize:"11px" }}>{myIncomingOffers.length+myAcceptedOffers.length}</span>
+                        {item.feed==="holdings"&&(myIncomingOffers.length+myAcceptedOffers.length+myDeclinedOffers.length)>0&&(
+                          <span style={{ marginLeft:"6px",background:"#dc2626",color:"#fff",borderRadius:"10px",padding:"1px 6px",fontSize:"11px" }}>{myIncomingOffers.length+myAcceptedOffers.length+myDeclinedOffers.length}</span>
                         )}
                       </button>
                     ))}
@@ -813,8 +884,8 @@ export default function NformApp() {
                 <button key={item.feed} onClick={()=>{ setActiveFeed(item.feed); setSidebarOpen(false); }}
                   style={{ display:"flex",alignItems:"center",gap:"10px",width:"100%",padding:"10px 16px",background:activeFeed===item.feed?"#1a1a1a":"none",color:activeFeed===item.feed?"#f8f7f4":"#1a1a1a",border:"none",borderTop:i===0?"2px solid #e0ddd8":"none",cursor:"pointer",fontSize:"14px",textAlign:"left",fontFamily:"inherit",marginTop:i===0?"8px":"0" }}>
                   <span>{item.label}</span>
-                  {item.feed==="holdings"&&(myIncomingOffers.length+myAcceptedOffers.length)>0&&(
-                    <span style={{ background:"#dc2626",color:"#fff",borderRadius:"10px",padding:"1px 6px",fontSize:"11px" }}>{myIncomingOffers.length+myAcceptedOffers.length}</span>
+                  {item.feed==="holdings"&&(myIncomingOffers.length+myAcceptedOffers.length+myDeclinedOffers.length)>0&&(
+                    <span style={{ background:"#dc2626",color:"#fff",borderRadius:"10px",padding:"1px 6px",fontSize:"11px" }}>{myIncomingOffers.length+myAcceptedOffers.length+myDeclinedOffers.length}</span>
                   )}
                 </button>
               ))}
@@ -867,6 +938,27 @@ export default function NformApp() {
                       createOrder={(d,a)=>a.order.create({ purchase_units:[{amount:{value:Number(offer.amount).toFixed(2)},description:`Nform post: ${offer.postId}`}] })}
                       onApprove={(d,a)=>a.order.capture().then(()=>onAcceptedOfferPayPalApprove(offer))}
                       onError={()=>alert("Payment failed. Please try again.")}/>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Declined offers — notify buyer */}
+          {activeFeed==="holdings"&&myDeclinedOffers.length>0&&(
+            <div style={{ margin:"16px 24px",background:"#fef2f2",border:"2px solid #991b1b",borderRadius:"4px",padding:"16px" }}>
+              <div style={{ fontSize:"11px",fontWeight:"700",letterSpacing:"2px",textTransform:"uppercase",color:"#991b1b",marginBottom:"12px" }}>✗ Offers Declined</div>
+              {myDeclinedOffers.map(offer=>{
+                const op = posts.find(p=>p.id===offer.postId);
+                return (
+                  <div key={offer.id} style={{ borderBottom:"1px solid #fecaca",paddingBottom:"12px",marginBottom:"12px" }}>
+                    <div style={{ fontSize:"13px",marginBottom:"4px" }}>"{(op?.content||offer.postContent)?.slice(0,80)}..."</div>
+                    <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+                      <div>
+                        <span style={{ fontSize:"13px",color:"#991b1b" }}><strong>{offer.originalPosterHandle}</strong> declined your offer of <strong>${offer.amount}</strong>.</span>
+                      </div>
+                      <button onClick={()=>dismissDeclinedOffer(offer.id)} style={{ padding:"4px 12px",background:"none",border:"2px solid #991b1b",color:"#991b1b",cursor:"pointer",fontSize:"12px",fontWeight:"700",fontFamily:"inherit",borderRadius:"2px" }}>Dismiss</button>
+                    </div>
                   </div>
                 );
               })}
@@ -974,7 +1066,10 @@ export default function NformApp() {
 
                     {/* Action buttons */}
                     <div style={{ display:"flex",gap:"4px",alignItems:"center" }}>
-                      <ActionBtn onClick={()=>handleLike(post.id,post.likes)} active={liked} activeColor="#dc2626" icon="🤍" activeIcon="❤️" count={post.likes?.length||0} label="Like"/>
+                      <div style={{ display:"flex",alignItems:"center" }}>
+                        <ActionBtn onClick={()=>handleLike(post.id,post.likes,post.likeDetails)} active={liked} activeColor="#dc2626" icon="🤍" activeIcon="❤️" label="Like"/>
+                        {(post.likes?.length||0)>0&&<button onClick={()=>setLikeListPostId(post.id)} style={{ background:"none",border:"none",cursor:"pointer",color:liked?"#dc2626":"#888",fontSize:"13px",fontWeight:liked?"700":"400",padding:"4px 4px 4px 0",fontFamily:"inherit" }}>{post.likes.length}</button>}
+                      </div>
                       <ActionBtn onClick={()=>toggleComments(post.id)} active={commentsOpen} activeColor="#1a1a1a" icon="💬" count={post.comments?.length||0} label="Comment"/>
                       <ActionBtn onClick={()=>handleBookmark(post.id)} active={bookmarked} activeColor="#888" icon="◇" activeIcon="◆" label={bookmarked?"Bookmarked":"Bookmark"}/>
                       <button onClick={()=>handleShare(post.id)} style={{ background:copied?"#d1fae5":"none",border:"none",cursor:"pointer",color:copied?"#065f46":"#888",fontSize:"13px",display:"flex",alignItems:"center",gap:"5px",fontFamily:"inherit",padding:"4px 8px",borderRadius:"4px",fontWeight:copied?"700":"400" }}
