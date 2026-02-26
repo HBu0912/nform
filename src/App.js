@@ -131,7 +131,7 @@ function PostMenu({ post, user, onOffer, onSetListing, onClose }) {
 }
 
 // ── Profile Page ──────────────────────────────────────────────────
-function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpenProfile }) {
+function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpenProfile, onSignIn, renderPost }) {
   const [profileData, setProfileData] = useState(null);
   const [activeTab, setActiveTab] = useState("posts");
   const isOwnProfile = currentUser?.uid === profileUserId;
@@ -147,6 +147,22 @@ function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpe
   const handle = "@" + displayName.toLowerCase().replace(/\s/g,"");
   const bio = profileData?.bio || "";
   const privacy = profileData?.privacy || { likes:true, holdings:true };
+  const isFollowing = profileData?.followers?.includes(currentUser?.uid) || false;
+  const followersCount = profileData?.followers?.length || 0;
+  const followingCount = profileData?.following?.length || 0;
+
+  async function handleFollow() {
+    if (!currentUser) { onSignIn(); return; }
+    if (isFollowing) {
+      await updateDoc(doc(db,"users",profileUserId), { followers: arrayRemove(currentUser.uid) });
+      await updateDoc(doc(db,"users",currentUser.uid), { following: arrayRemove(profileUserId) });
+      setProfileData(prev => ({ ...prev, followers: (prev?.followers||[]).filter(id=>id!==currentUser.uid) }));
+    } else {
+      await updateDoc(doc(db,"users",profileUserId), { followers: arrayUnion(currentUser.uid) });
+      await updateDoc(doc(db,"users",currentUser.uid), { following: arrayUnion(profileUserId) });
+      setProfileData(prev => ({ ...prev, followers: [...(prev?.followers||[]), currentUser.uid] }));
+    }
+  }
 
   const userPosts = posts.filter(p=>p.userId===profileUserId).sort((a,b)=>{
     const aT = a.timestamp?.toDate?.()?.getTime()||0;
@@ -177,44 +193,31 @@ function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpe
     ...(isOwnProfile?[{ id:"offers",   label:`Offers (${userOffers.length})` }]:[]),
   ];
 
-  const getCat = id => CATEGORIES.find(c=>c.id===id)||CATEGORIES[1];
-
-  function MiniPost({ p }) {
-    const cat = getCat(p.category);
-    return (
-      <div style={{ padding:"16px 0",borderBottom:"1px solid #e0ddd8" }}>
-        <div style={{ display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",marginBottom:"6px" }}>
-          <span style={{ color:"#888",fontSize:"12px" }}>{timeAgo(p.timestamp)}</span>
-          <span style={{ background:cat.color,border:"1px solid rgba(0,0,0,0.15)",borderRadius:"2px",padding:"2px 8px",fontSize:"11px",fontWeight:"700",textTransform:"uppercase" }}>{cat.emoji} {cat.label}</span>
-          {p.forSale&&<span style={{ background:"#d1fae5",color:"#065f46",border:"1px solid #6ee7b7",borderRadius:"2px",padding:"2px 8px",fontSize:"11px",fontWeight:"700" }}>💲 ${p.listPrice}</span>}
-        </div>
-        <p style={{ margin:0,fontSize:"15px",lineHeight:"1.65" }}>{p.content}</p>
-        <div style={{ marginTop:"8px",fontSize:"12px",color:"#888" }}>❤️ {p.likes?.length||0} · 💬 {p.comments?.length||0}</div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"20px",overflowY:"auto" }}
       onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
       <div style={{ background:"#f8f7f4",border:"2px solid #1a1a1a",borderRadius:"4px",width:"100%",maxWidth:"640px",marginTop:"20px",boxShadow:"6px 6px 0 #1a1a1a",overflow:"hidden" }}>
         {/* Header */}
         <div style={{ padding:"28px",borderBottom:"2px solid #1a1a1a",background:"#fff" }}>
-          <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:"16px" }}>
+          <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between" }}>
             <div style={{ display:"flex",alignItems:"center",gap:"16px" }}>
               <Avatar name={displayName} size={64}/>
               <div>
-                <div style={{ fontWeight:"900",fontSize:"20px",marginBottom:"2px" }}>{displayName}</div>
-                <div style={{ color:"#888",fontSize:"14px",marginBottom:"6px" }}>{handle}</div>
-                {bio&&<div style={{ fontSize:"14px",lineHeight:"1.5",maxWidth:"360px",color:"#444" }}>{bio}</div>}
+                <div style={{ display:"flex",alignItems:"center",gap:"12px",marginBottom:"2px" }}>
+                  <span style={{ fontWeight:"900",fontSize:"20px" }}>{displayName}</span>
+                  <span style={{ fontSize:"12px",color:"#888" }}><strong style={{ color:"#1a1a1a" }}>{followersCount}</strong> followers</span>
+                  <span style={{ fontSize:"12px",color:"#888" }}><strong style={{ color:"#1a1a1a" }}>{followingCount}</strong> following</span>
+                </div>
+                <div style={{ color:"#888",fontSize:"13px",marginBottom:"4px" }}>{handle}</div>
+                {!isOwnProfile&&(
+                  <button onClick={handleFollow} style={{ padding:"2px 10px",background:"none",color:"#1a1a1a",border:"1px solid #1a1a1a",borderRadius:"2px",cursor:"pointer",fontSize:"11px",fontWeight:"700",fontFamily:"inherit",marginBottom:"4px" }}>
+                    {isFollowing?"Following ✓":"Follow"}
+                  </button>
+                )}
+                {bio&&<div style={{ fontSize:"14px",lineHeight:"1.5",maxWidth:"360px",color:"#444",marginTop:"4px" }}>{bio}</div>}
               </div>
             </div>
             <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",fontSize:"22px",color:"#888",padding:0 }}>×</button>
-          </div>
-          <div style={{ display:"flex",gap:"24px",fontSize:"14px" }}>
-            <span><strong>{userPosts.length}</strong> <span style={{ color:"#888" }}>posts</span></span>
-            {showHoldings&&<span><strong>{userHoldings.length}</strong> <span style={{ color:"#888" }}>holdings</span></span>}
-            {showLikes&&<span><strong>{userLikes.length}</strong> <span style={{ color:"#888" }}>likes</span></span>}
           </div>
         </div>
         {/* Tabs */}
@@ -229,7 +232,7 @@ function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpe
         <div style={{ padding:"0 24px 24px",maxHeight:"60vh",overflowY:"auto" }}>
           {activeTab==="posts"&&(userPosts.length===0
             ?<p style={{ color:"#888",padding:"24px 0",textAlign:"center" }}>No posts yet.</p>
-            :userPosts.map(p=><MiniPost key={p.id} p={p}/>)
+            :userPosts.map(p=>renderPost(p))
           )}
           {activeTab==="comments"&&(userComments.length===0
             ?<p style={{ color:"#888",padding:"24px 0",textAlign:"center" }}>No comments yet.</p>
@@ -247,21 +250,11 @@ function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpe
           )}
           {activeTab==="holdings"&&showHoldings&&(userHoldings.length===0
             ?<p style={{ color:"#888",padding:"24px 0",textAlign:"center" }}>No holdings yet.</p>
-            :userHoldings.map(p=>(
-              <div key={p.id} style={{ borderBottom:"1px solid #e0ddd8" }}>
-                <div style={{ fontSize:"12px",color:"#888",paddingTop:"16px",marginBottom:"-8px" }}>Originally by {p.handle}</div>
-                <MiniPost p={p}/>
-              </div>
-            ))
+            :userHoldings.map(p=>renderPost(p))
           )}
           {activeTab==="likes"&&showLikes&&(userLikes.length===0
             ?<p style={{ color:"#888",padding:"24px 0",textAlign:"center" }}>No liked posts yet.</p>
-            :userLikes.map(p=>(
-              <div key={p.id} style={{ borderBottom:"1px solid #e0ddd8" }}>
-                <div style={{ fontSize:"12px",paddingTop:"16px",marginBottom:"-8px",cursor:"pointer",fontWeight:"700",color:"#1a1a1a" }} onClick={()=>onOpenProfile(p.userId)}>{p.handle}</div>
-                <MiniPost p={p}/>
-              </div>
-            ))
+            :userLikes.map(p=>renderPost(p))
           )}
           {activeTab==="offers"&&isOwnProfile&&(userOffers.length===0
             ?<p style={{ color:"#888",padding:"24px 0",textAlign:"center" }}>No offer history yet.</p>
@@ -282,6 +275,42 @@ function ProfilePage({ profileUserId, currentUser, posts, offers, onClose, onOpe
               </div>
             ))
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Members Modal ─────────────────────────────────────────────────
+function MembersModal({ users, onClose, onOpenProfile }) {
+  return (
+    <div style={{ position:"fixed",inset:0,zIndex:300,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px" }}
+      onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div style={{ background:"#f8f7f4",border:"2px solid #1a1a1a",borderRadius:"4px",width:"100%",maxWidth:"400px",boxShadow:"6px 6px 0 #1a1a1a" }}>
+        <div style={{ padding:"16px 20px",borderBottom:"2px solid #1a1a1a",display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+          <div style={{ fontWeight:"900",fontSize:"16px",fontStyle:"italic" }}>👥 {users.length} {users.length===1?"Member":"Members"}</div>
+          <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",fontSize:"22px",color:"#888",padding:0 }}>×</button>
+        </div>
+        <div style={{ maxHeight:"420px",overflowY:"auto",padding:"8px 0" }}>
+          {users.length===0
+            ? <p style={{ padding:"20px",textAlign:"center",color:"#888",fontSize:"14px" }}>No members yet.</p>
+            : users.map(u=>{
+              const name = u.displayName || "User";
+              const handle = "@" + name.toLowerCase().replace(/\s/g,"");
+              return (
+                <div key={u.id} onClick={()=>{ onOpenProfile(u.id); onClose(); }}
+                  style={{ display:"flex",alignItems:"center",gap:"12px",padding:"10px 20px",cursor:"pointer",borderBottom:"1px solid #f0ede8" }}
+                  onMouseEnter={e=>e.currentTarget.style.background="#f0ede8"}
+                  onMouseLeave={e=>e.currentTarget.style.background="none"}>
+                  <Avatar name={name} size={36}/>
+                  <div>
+                    <div style={{ fontWeight:"700",fontSize:"14px" }}>{name}</div>
+                    <div style={{ color:"#888",fontSize:"12px" }}>{handle}</div>
+                  </div>
+                </div>
+              );
+            })
+          }
         </div>
       </div>
     </div>
@@ -434,8 +463,10 @@ export default function NformApp() {
   const [listingModal,   setListingModal]   = useState(null);
   const [listPrice,      setListPrice]      = useState("");
   const [listError,      setListError]      = useState("");
-  const [likeListPostId, setLikeListPostId] = useState(null);
-  const [totalUsers,     setTotalUsers]     = useState(0);
+  const [likeListPostId,   setLikeListPostId]   = useState(null);
+  const [totalUsers,       setTotalUsers]       = useState(0);
+  const [allUsers,         setAllUsers]         = useState([]);
+  const [showMembersModal, setShowMembersModal] = useState(false);
 
   // ── Auth ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -460,7 +491,10 @@ export default function NformApp() {
 
   // ── Total user count ────────────────────────────────────────────
   useEffect(() => {
-    return onSnapshot(collection(db,"users"), snap => setTotalUsers(snap.size));
+    return onSnapshot(collection(db,"users"), snap => {
+      setTotalUsers(snap.size);
+      setAllUsers(snap.docs.map(d=>({id:d.id,...d.data()})));
+    });
   }, []);
 
   // ── Posts ───────────────────────────────────────────────────────
@@ -660,6 +694,92 @@ export default function NformApp() {
     setListingModal(null); setListPrice("");
   }
 
+  // ── Post renderer (shared by feed and profile tabs) ─────────────
+  function renderPost(post) {
+    const cat        = getCat(post.category);
+    const liked      = post.likes?.includes(user?.uid);
+    const bookmarked = bookmarks.some(b=>b.postId===post.id);
+    const commentsOpen = expandedComments.has(post.id);
+    const copied     = copiedPostId===post.id;
+    const menuOpen   = openMenuPostId===post.id;
+    return (
+      <article key={post.id} style={{ padding:"24px 28px",borderBottom:"1px solid #e0ddd8",background:"#f8f7f4" }}>
+        <div style={{ display:"flex",gap:"14px" }}>
+          <div onClick={()=>setViewingProfileId(post.userId)} style={{ cursor:"pointer",flexShrink:0 }}>
+            <Avatar name={post.username} size={44}/>
+          </div>
+          <div style={{ flex:1 }}>
+            <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between" }}>
+              <div style={{ display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",marginBottom:"6px" }}>
+                <span onClick={()=>setViewingProfileId(post.userId)} style={{ fontWeight:"700",fontSize:"15px",cursor:"pointer" }}>{post.username}</span>
+                <span style={{ color:"#888",fontSize:"13px" }}>{post.handle}</span>
+                {post.currentOwnerId&&(
+                  <span style={{ background:"#e8e8e8",color:"#666",border:"1px solid #ccc",borderRadius:"20px",padding:"1px 8px",fontSize:"11px",fontStyle:"italic" }}>
+                    owned by {post.currentOwnerHandle}
+                  </span>
+                )}
+                <span style={{ color:"#aaa" }}>·</span>
+                <span style={{ color:"#888",fontSize:"12px" }}>{timeAgo(post.timestamp)}</span>
+                <span style={{ background:cat.color,border:"1px solid rgba(0,0,0,0.15)",borderRadius:"2px",padding:"2px 8px",fontSize:"11px",fontWeight:"700",letterSpacing:"0.5px",textTransform:"uppercase" }}>{cat.emoji} {cat.label}</span>
+                {post.forSale&&<span style={{ background:"#d1fae5",color:"#065f46",border:"1px solid #6ee7b7",borderRadius:"2px",padding:"2px 8px",fontSize:"11px",fontWeight:"700" }}>💲 ${post.listPrice}</span>}
+              </div>
+              <div style={{ position:"relative",flexShrink:0 }}>
+                <button onClick={e=>{ e.stopPropagation(); setOpenMenuPostId(menuOpen?null:post.id); }}
+                  style={{ background:"none",border:"none",cursor:"pointer",fontSize:"18px",color:"#888",padding:"0 4px",lineHeight:1,fontFamily:"inherit" }}>···</button>
+                {menuOpen&&(
+                  <PostMenu post={post} user={user}
+                    onOffer={()=>{ if(!user){setSignInPrompt("Sign in to make an offer!");return;} setOfferModal({post});setOfferAmount("");setOfferError("");setShowPayPal(false); }}
+                    onSetListing={()=>{ setListingModal({post});setListPrice(post.listPrice||"");setListError(""); }}
+                    onClose={()=>setOpenMenuPostId(null)}/>
+                )}
+              </div>
+            </div>
+            <p style={{ margin:"0 0 2px",lineHeight:"1.65",fontSize:"15px" }}>{post.content}</p>
+            <div style={{ display:"flex",gap:"4px",alignItems:"center" }}>
+              <div style={{ display:"flex",alignItems:"center" }}>
+                <ActionBtn onClick={()=>handleLike(post.id,post.likes,post.likeDetails)} active={liked} activeColor="#dc2626" icon="🤍" activeIcon="❤️" label="Like"/>
+                {(post.likes?.length||0)>0&&<button onClick={()=>setLikeListPostId(post.id)} style={{ background:"none",border:"none",cursor:"pointer",color:liked?"#dc2626":"#888",fontSize:"13px",fontWeight:liked?"700":"400",padding:"4px 4px 4px 0",fontFamily:"inherit" }}>{post.likes.length}</button>}
+              </div>
+              <ActionBtn onClick={()=>toggleComments(post.id)} active={commentsOpen} activeColor="#1a1a1a" icon="💬" count={post.comments?.length||0} label="Comment"/>
+              <ActionBtn onClick={()=>handleBookmark(post.id)} active={bookmarked} activeColor="#888" icon="◇" activeIcon="◆" label={bookmarked?"Bookmarked":"Bookmark"}/>
+              <button onClick={()=>handleShare(post.id)} style={{ background:copied?"#d1fae5":"none",border:"none",cursor:"pointer",color:copied?"#065f46":"#888",fontSize:"13px",display:"flex",alignItems:"center",gap:"5px",fontFamily:"inherit",padding:"4px 8px",borderRadius:"4px",fontWeight:copied?"700":"400" }}
+                onMouseEnter={e=>{ if(!copied) e.currentTarget.style.background="#f0ede8"; }}
+                onMouseLeave={e=>{ if(!copied) e.currentTarget.style.background=copied?"#d1fae5":"none"; }}>
+                <span style={{ fontSize:"16px" }}>{copied?"✅":"🔗"}</span>
+                <span>{copied?"Copied!":"Share"}</span>
+              </button>
+            </div>
+            {commentsOpen&&(
+              <div style={{ marginTop:"16px",borderTop:"1px solid #e0ddd8",paddingTop:"16px" }}>
+                {post.comments?.length>0 ? post.comments.map((c,i)=>(
+                  <div key={i} style={{ display:"flex",gap:"10px",marginBottom:"12px" }}>
+                    <div onClick={()=>setViewingProfileId(c.userId)} style={{ cursor:"pointer" }}>
+                      <Avatar name={c.username} size={32}/>
+                    </div>
+                    <div style={{ background:"#f0ede8",borderRadius:"2px",padding:"10px 12px",flex:1 }}>
+                      <span onClick={()=>setViewingProfileId(c.userId)} style={{ fontWeight:"700",fontSize:"13px",cursor:"pointer" }}>{c.username}</span>
+                      <span style={{ color:"#888",fontSize:"11px",marginLeft:"8px" }}>{c.timestamp?timeAgo({toDate:()=>new Date(c.timestamp)}):"Just now"}</span>
+                      <p style={{ margin:"4px 0 0",fontSize:"14px",lineHeight:"1.5" }}>{c.text}</p>
+                    </div>
+                  </div>
+                )):<p style={{ color:"#888",fontSize:"13px",marginBottom:"12px" }}>No comments yet. Be the first!</p>}
+                <div style={{ display:"flex",gap:"10px",alignItems:"flex-start" }}>
+                  <Avatar name={displayName||user?.displayName||"?"} size={32}/>
+                  <div style={{ flex:1 }}>
+                    <textarea value={commentInputs[post.id]||""} onChange={e=>setCommentInputs(prev=>({...prev,[post.id]:e.target.value}))} placeholder="Add a comment..."
+                      style={{ width:"100%",padding:"8px 12px",border:"2px solid #1a1a1a",borderRadius:"2px",fontSize:"13px",fontFamily:"inherit",resize:"none",minHeight:"60px",background:"#fff",outline:"none",boxSizing:"border-box" }}/>
+                    {commentErrors[post.id]&&<div style={{ color:"#991b1b",fontSize:"12px",marginTop:"4px" }}>{commentErrors[post.id]}</div>}
+                    <button onClick={()=>handleComment(post.id)} style={{ marginTop:"6px",background:"#1a1a1a",color:"#f8f7f4",border:"none",padding:"6px 16px",fontSize:"12px",fontWeight:"700",cursor:"pointer",fontFamily:"inherit",letterSpacing:"1px" }}>Reply →</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </article>
+    );
+  }
+
   // ── Render ──────────────────────────────────────────────────────
   return (
     <PayPalScriptProvider options={{ "client-id":PAYPAL_CLIENT_ID }}>
@@ -668,13 +788,17 @@ export default function NformApp() {
       {/* Sign-in prompt */}
       {signInPrompt&&<SignInPrompt message={signInPrompt} onLogin={handleLogin} onClose={()=>setSignInPrompt(null)}/>}
 
+      {/* Members list */}
+      {showMembersModal&&<MembersModal users={allUsers} onClose={()=>setShowMembersModal(false)} onOpenProfile={id=>{ setShowMembersModal(false); setViewingProfileId(id); }}/>}
+
       {/* Like list */}
       {likeListPostId&&(()=>{ const p=posts.find(x=>x.id===likeListPostId); return p?<LikeListModal post={p} onClose={()=>setLikeListPostId(null)} onOpenProfile={id=>{ setLikeListPostId(null); setViewingProfileId(id); }}/>:null; })()}
 
       {/* Profile view */}
       {viewingProfileId&&(
         <ProfilePage profileUserId={viewingProfileId} currentUser={user} posts={posts} offers={offers}
-          onClose={()=>setViewingProfileId(null)} onOpenProfile={id=>setViewingProfileId(id)}/>
+          onClose={()=>setViewingProfileId(null)} onOpenProfile={id=>setViewingProfileId(id)}
+          onSignIn={()=>setSignInPrompt("Sign in to follow users!")} renderPost={renderPost}/>
       )}
 
       {/* Edit profile */}
@@ -796,7 +920,7 @@ export default function NformApp() {
           <button onClick={()=>setSidebarOpen(!sidebarOpen)} style={{ background:"none",border:"none",cursor:"pointer",fontSize:"20px" }}>☰</button>
           <span style={{ fontSize:"22px",fontWeight:"900",letterSpacing:"-1px",fontStyle:"italic" }}>Nform</span>
           <span style={{ background:"#1a1a1a",color:"#f8f7f4",fontSize:"10px",fontWeight:"700",letterSpacing:"2px",padding:"2px 8px",textTransform:"uppercase" }}>LIVE</span>
-          <span style={{ fontSize:"11px",color:"#888",fontWeight:"600",whiteSpace:"nowrap" }}>👥 {totalUsers.toLocaleString()} {totalUsers===1?"member":"members"}</span>
+          <button onClick={()=>setShowMembersModal(true)} style={{ background:"none",border:"none",cursor:"pointer",fontSize:"11px",color:"#888",fontWeight:"600",whiteSpace:"nowrap",fontFamily:"inherit",padding:0 }}>👥 {totalUsers.toLocaleString()} {totalUsers===1?"member":"members"}</button>
         </div>
         <div style={{ flex:1,maxWidth:"400px" }}>
           <input value={search} onChange={e=>{ setSearch(e.target.value); setActiveFeed("home"); }} placeholder="🔍 Search posts..."
@@ -1019,98 +1143,7 @@ export default function NformApp() {
               :search?"No posts match your search."
               :"No posts in this category yet. Be the first!"}
             </div>
-          ) : displayedPosts.map(post=>{
-            const cat        = getCat(post.category);
-            const liked      = post.likes?.includes(user?.uid);
-            const bookmarked = bookmarks.some(b=>b.postId===post.id);
-            const commentsOpen = expandedComments.has(post.id);
-            const copied     = copiedPostId===post.id;
-            const menuOpen   = openMenuPostId===post.id;
-
-            return (
-              <article key={post.id} style={{ padding:"24px 28px",borderBottom:"1px solid #e0ddd8",background:"#f8f7f4" }}>
-                <div style={{ display:"flex",gap:"14px" }}>
-                  <div onClick={()=>setViewingProfileId(post.userId)} style={{ cursor:"pointer",flexShrink:0 }}>
-                    <Avatar name={post.username} size={44}/>
-                  </div>
-                  <div style={{ flex:1 }}>
-                    {/* Post header */}
-                    <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between" }}>
-                      <div style={{ display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap",marginBottom:"6px" }}>
-                        <span onClick={()=>setViewingProfileId(post.userId)} style={{ fontWeight:"700",fontSize:"15px",cursor:"pointer" }}>{post.username}</span>
-                        <span style={{ color:"#888",fontSize:"13px" }}>{post.handle}</span>
-                        {post.currentOwnerId&&(
-                          <span style={{ background:"#e8e8e8",color:"#666",border:"1px solid #ccc",borderRadius:"20px",padding:"1px 8px",fontSize:"11px",fontStyle:"italic" }}>
-                            owned by {post.currentOwnerHandle}
-                          </span>
-                        )}
-                        <span style={{ color:"#aaa" }}>·</span>
-                        <span style={{ color:"#888",fontSize:"12px" }}>{timeAgo(post.timestamp)}</span>
-                        <span style={{ background:cat.color,border:"1px solid rgba(0,0,0,0.15)",borderRadius:"2px",padding:"2px 8px",fontSize:"11px",fontWeight:"700",letterSpacing:"0.5px",textTransform:"uppercase" }}>{cat.emoji} {cat.label}</span>
-                        {post.forSale&&<span style={{ background:"#d1fae5",color:"#065f46",border:"1px solid #6ee7b7",borderRadius:"2px",padding:"2px 8px",fontSize:"11px",fontWeight:"700" }}>💲 ${post.listPrice}</span>}
-                      </div>
-                      {/* ··· menu */}
-                      <div style={{ position:"relative",flexShrink:0 }}>
-                        <button onClick={e=>{ e.stopPropagation(); setOpenMenuPostId(menuOpen?null:post.id); }}
-                          style={{ background:"none",border:"none",cursor:"pointer",fontSize:"18px",color:"#888",padding:"0 4px",lineHeight:1,fontFamily:"inherit" }}>···</button>
-                        {menuOpen&&(
-                          <PostMenu post={post} user={user}
-                            onOffer={()=>{ if(!user){setSignInPrompt("Sign in to make an offer!");return;} setOfferModal({post});setOfferAmount("");setOfferError("");setShowPayPal(false); }}
-                            onSetListing={()=>{ setListingModal({post});setListPrice(post.listPrice||"");setListError(""); }}
-                            onClose={()=>setOpenMenuPostId(null)}/>
-                        )}
-                      </div>
-                    </div>
-
-                    <p style={{ margin:"0 0 2px",lineHeight:"1.65",fontSize:"15px" }}>{post.content}</p>
-
-                    {/* Action buttons */}
-                    <div style={{ display:"flex",gap:"4px",alignItems:"center" }}>
-                      <div style={{ display:"flex",alignItems:"center" }}>
-                        <ActionBtn onClick={()=>handleLike(post.id,post.likes,post.likeDetails)} active={liked} activeColor="#dc2626" icon="🤍" activeIcon="❤️" label="Like"/>
-                        {(post.likes?.length||0)>0&&<button onClick={()=>setLikeListPostId(post.id)} style={{ background:"none",border:"none",cursor:"pointer",color:liked?"#dc2626":"#888",fontSize:"13px",fontWeight:liked?"700":"400",padding:"4px 4px 4px 0",fontFamily:"inherit" }}>{post.likes.length}</button>}
-                      </div>
-                      <ActionBtn onClick={()=>toggleComments(post.id)} active={commentsOpen} activeColor="#1a1a1a" icon="💬" count={post.comments?.length||0} label="Comment"/>
-                      <ActionBtn onClick={()=>handleBookmark(post.id)} active={bookmarked} activeColor="#888" icon="◇" activeIcon="◆" label={bookmarked?"Bookmarked":"Bookmark"}/>
-                      <button onClick={()=>handleShare(post.id)} style={{ background:copied?"#d1fae5":"none",border:"none",cursor:"pointer",color:copied?"#065f46":"#888",fontSize:"13px",display:"flex",alignItems:"center",gap:"5px",fontFamily:"inherit",padding:"4px 8px",borderRadius:"4px",fontWeight:copied?"700":"400" }}
-                        onMouseEnter={e=>{ if(!copied) e.currentTarget.style.background="#f0ede8"; }}
-                        onMouseLeave={e=>{ if(!copied) e.currentTarget.style.background=copied?"#d1fae5":"none"; }}>
-                        <span style={{ fontSize:"16px" }}>{copied?"✅":"🔗"}</span>
-                        <span>{copied?"Copied!":"Share"}</span>
-                      </button>
-                    </div>
-
-                    {/* Comments section */}
-                    {commentsOpen&&(
-                      <div style={{ marginTop:"16px",borderTop:"1px solid #e0ddd8",paddingTop:"16px" }}>
-                        {post.comments?.length>0 ? post.comments.map((c,i)=>(
-                          <div key={i} style={{ display:"flex",gap:"10px",marginBottom:"12px" }}>
-                            <div onClick={()=>setViewingProfileId(c.userId)} style={{ cursor:"pointer" }}>
-                              <Avatar name={c.username} size={32}/>
-                            </div>
-                            <div style={{ background:"#f0ede8",borderRadius:"2px",padding:"10px 12px",flex:1 }}>
-                              <span onClick={()=>setViewingProfileId(c.userId)} style={{ fontWeight:"700",fontSize:"13px",cursor:"pointer" }}>{c.username}</span>
-                              <span style={{ color:"#888",fontSize:"11px",marginLeft:"8px" }}>{c.timestamp?timeAgo({toDate:()=>new Date(c.timestamp)}):"Just now"}</span>
-                              <p style={{ margin:"4px 0 0",fontSize:"14px",lineHeight:"1.5" }}>{c.text}</p>
-                            </div>
-                          </div>
-                        )):<p style={{ color:"#888",fontSize:"13px",marginBottom:"12px" }}>No comments yet. Be the first!</p>}
-                        <div style={{ display:"flex",gap:"10px",alignItems:"flex-start" }}>
-                          <Avatar name={displayName||user?.displayName||"?"} size={32}/>
-                          <div style={{ flex:1 }}>
-                            <textarea value={commentInputs[post.id]||""} onChange={e=>setCommentInputs(prev=>({...prev,[post.id]:e.target.value}))} placeholder="Add a comment..."
-                              style={{ width:"100%",padding:"8px 12px",border:"2px solid #1a1a1a",borderRadius:"2px",fontSize:"13px",fontFamily:"inherit",resize:"none",minHeight:"60px",background:"#fff",outline:"none",boxSizing:"border-box" }}/>
-                            {commentErrors[post.id]&&<div style={{ color:"#991b1b",fontSize:"12px",marginTop:"4px" }}>{commentErrors[post.id]}</div>}
-                            <button onClick={()=>handleComment(post.id)} style={{ marginTop:"6px",background:"#1a1a1a",color:"#f8f7f4",border:"none",padding:"6px 16px",fontSize:"12px",fontWeight:"700",cursor:"pointer",fontFamily:"inherit",letterSpacing:"1px" }}>Reply →</button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
+          ) : displayedPosts.map(post=>renderPost(post))}
         </main>
       </div>
     </div>
